@@ -16,8 +16,18 @@ jobs:
       - uses: actions/setup-java@99b8673ff64fbf99d8d325f52d9a5bdedb8483e9 # v4.2.1
         with:
           distribution: temurin
-          java-version: 11
+          java-version: 21
           cache: gradle
+      - name: Install Android build dependencies
+        run: |
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKMANAGER" ] || SDKMANAGER=sdkmanager
+
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          "$SDKMANAGER" --install \
+            "platforms;android-32" \
+            "build-tools;36.0.0" \
+            "ndk;25.2.9519653"
       - name: Test Build
         run: |
           chmod +x ./gradlew
@@ -25,13 +35,9 @@ jobs:
       - name: Get Module Version
         id: module-version
         run: |
-          MODULE_VERSION=$(cat module.gradle | grep "moduleVersion =" | awk -F'"' '{print $2}')
+          MODULE_VERSION=$(grep "moduleVersion =" module.gradle | awk -F'"' '{print $2}')
           echo "version=$MODULE_VERSION" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         with:
           name: ZygiskFrida-${{ steps.module-version.outputs.version }}-release
-          path: out/magisk_module_zygisk_release
-      - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
-        with:
-          name: ZygiskFrida-${{ steps.module-version.outputs.version }}-riru-release
-          path: out/magisk_module_riru_release
+          path: out/ZygiskFrida-${{ steps.module-version.outputs.version }}-release.zip

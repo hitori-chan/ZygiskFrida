@@ -16,15 +16,15 @@
 static std::string child_gating_mode;  // NOLINT
 static std::vector<std::string> injected_libraries;
 
-pid_t (*orig_fork)();
+static pid_t (*orig_fork)();
 
-pid_t (*orig_vfork)();
+static pid_t (*orig_vfork)();
 
-pid_t fork_replacement() {
+static pid_t handle_fork(pid_t (*original_fork)()) {
     pid_t parent_pid = getpid();
     LOGI("[child_gating][pid %d] detected fork/vfork", parent_pid);
 
-    pid_t child_pid = orig_fork();
+    pid_t child_pid = original_fork();
     if (child_pid != 0) {
         LOGI("[child_gating][pid %d] returning from forking %d", parent_pid, child_pid);
         return child_pid;
@@ -58,6 +58,29 @@ pid_t fork_replacement() {
     return 0;
 }
 
+pid_t fork_replacement() {
+    return handle_fork(orig_fork);
+}
+
+pid_t vfork_replacement() {
+    return handle_fork(orig_vfork);
+}
+
+static bool install_hook(void *address, void *replacement, void **original, char const *name) {
+    if (address == nullptr) {
+        LOGE("[child_gating] %s address not found", name);
+        return false;
+    }
+
+    auto result = DobbyHook(address, replacement, original);
+    if (result != 0) {
+        LOGE("[child_gating] failed to install %s hook: %d", name, result);
+        return false;
+    }
+
+    LOGI("[child_gating] %s hook installed", name);
+    return true;
+}
 
 void enable_child_gating(child_gating_config const &cfg) {
     child_gating_mode = cfg.mode;
@@ -70,17 +93,18 @@ void enable_child_gating(child_gating_config const &cfg) {
     void *vforkAddr = dlsym(RTLD_DEFAULT, "vfork");
     LOGI("[child_gating] vfork address %p", vforkAddr);
 
-    DobbyHook(
+    bool fork_hooked = install_hook(
         forkAddr,
         reinterpret_cast<void *>(fork_replacement),
-        reinterpret_cast<void **>(&orig_fork));
-    LOGI("[child_gating] fork hook installed");
-    DobbyHook(
+        reinterpret_cast<void **>(&orig_fork),
+        "fork");
+    bool vfork_hooked = install_hook(
         vforkAddr,
-        reinterpret_cast<void *>(fork_replacement),
-        reinterpret_cast<void **>(&orig_vfork));
-    LOGI("[child_gating] vfork hook installed");
+        reinterpret_cast<void *>(vfork_replacement),
+        reinterpret_cast<void **>(&orig_vfork),
+        "vfork");
 
-    LOGI("[child_gating] child gating enabled");
+    if (fork_hooked || vfork_hooked) {
+        LOGI("[child_gating] child gating enabled");
+    }
 }
-

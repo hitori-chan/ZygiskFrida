@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+      - uses: actions/setup-java@99b8673ff64fbf99d8d325f52d9a5bdedb8483e9 # v4.2.1
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - name: Install Android build dependencies
+        run: |
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKMANAGER" ] || SDKMANAGER=sdkmanager
+
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          "$SDKMANAGER" --install \
+            "platforms;android-32" \
+            "build-tools;36.0.0" \
+            "ndk;25.2.9519653"
+      - name: Get module metadata
+        id: module
+        run: |
+          version=$(grep "moduleVersion =" module.gradle | awk -F'"' '{print $2}')
+          frida_version=$(grep "fridaVersion =" module.gradle | awk -F'"' '{print $2}')
+          tag_name="$version"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag_name="$GITHUB_REF_NAME"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "frida_version=$frida_version" >> "$GITHUB_OUTPUT"
+          echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
+      - name: Check tag matches module version
+        if: github.ref_type == 'tag'
+        run: |
+          if [ "$GITHUB_REF_NAME" != "${{ steps.module.outputs.version }}" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match module version ${{ steps.module.outputs.version }}" >&2
+            exit 1
+          fi
+      - name: Build release zip
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :module:assembleRelease
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ steps.module.outputs.tag_name }}
+          MODULE_VERSION: ${{ steps.module.outputs.version }}
+          FRIDA_VERSION: ${{ steps.module.outputs.frida_version }}
+        run: |
+          zip_path="out/ZygiskFrida-${MODULE_VERSION}-release.zip"
+          notes="Zygisk-only build with Frida ${FRIDA_VERSION}."
+
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" "$zip_path" --clobber
+          else
+            gh release create "$TAG_NAME" "$zip_path" \
+              --title "$TAG_NAME" \
+              --target "$GITHUB_SHA" \
+              --notes "$notes"
+          fi

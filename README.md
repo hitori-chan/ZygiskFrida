@@ -15,8 +15,18 @@ more stealthy way.
 - Control about the injection time of the gadget.
 - Allows you to load multiple arbitrary libraries into the process.
 
-This repo also provides a [Riru](https://github.com/RikkaApps/Riru) flavor in case you are still
-using riru with an older magisk version rather than zygisk.
+## How it works
+
+The module zip contains two separate native components:
+
+- `libzygiskfrida.so` is built from this codebase and loaded by Zygisk.
+- `libgadget.so` is the bundled Frida Gadget loaded into configured target apps.
+
+During app specialization, ZygiskFrida reads its config from the Magisk module directory
+(`/data/adb/modules/zygiskfrida`) using Zygisk's module directory file descriptor. Relative
+library paths such as `libgadget.so` are resolved against that directory before the app sandbox is
+applied, then injected later through file descriptors. Runtime assets are not installed into public
+temporary storage.
 
 ## How to use the module
 
@@ -25,14 +35,13 @@ using riru with an older magisk version rather than zygisk.
 - Zygisk available and enabled
 
 ### Quick start
-- Download the latest release from the [Release Page](https://github.com/lico-n/ZygiskFrida/releases)\
-  If you are using riru instead of zygisk choose the riru-release. Otherwise choose the normal version.
+- Download the latest release from the [Release Page](https://github.com/hitori-chan/ZygiskFrida/releases).
 - Transfer the ZygiskFrida zip file to your device and install it via Magisk.
 - Reboot after install
 - Create the config file and adjust the package name to your target app (replace `your.target.application` in the commands)
 ```shell
-adb shell 'su -c cp /data/local/tmp/re.zyg.fri/config.json.example /data/local/tmp/re.zyg.fri/config.json'
-adb shell 'su -c sed -i s/com.example.package/your.target.application/ /data/local/tmp/re.zyg.fri/config.json'
+adb shell 'su -c cp /data/adb/modules/zygiskfrida/config.json.example /data/adb/modules/zygiskfrida/config.json'
+adb shell 'su -c sed -i s/com.example.package/your.target.application/ /data/adb/modules/zygiskfrida/config.json'
 ```
 - Launch your app. It will pause at startup allowing you to attach
   f.e. `frida -U -N your.target.application` or `frida -U -n Gadget`
@@ -45,6 +54,7 @@ to use a different port.
 
 This module also supports adding a start up delay that can delay injection of the gadget to
 avoid checks run at startup time, loading arbitrary libraries and child gating.
+Use relative library paths in `config.json` when the libraries are stored in the module directory.
 
 Please take a look at the [configuration guide](docs/advanced_config.md) for this.
 
@@ -54,7 +64,7 @@ Please take a look at the [configuration guide](docs/advanced_config.md) for thi
 - Run `./gradlew :module:assembleRelease`
 - The build magisk module should then be in the `out` directory.
 
-You can also build and install the module to your device directly with `./gradlew :module:flashAndRebootZygiskRelease`
+You can also build and install the module to your device directly with `./gradlew :module:flashAndRebootRelease`
 
 ## Caveats
 
@@ -62,6 +72,5 @@ You can also build and install the module to your device directly with `./gradle
 
 ## Credits
 
-- Inspired by https://github.com/Perfare/Zygisk-Il2CppDumper
-- https://github.com/hexhacking/xDL
-
+- Inspired by [Zygisk-Il2CppDumper](https://github.com/Perfare/Zygisk-Il2CppDumper)
+- [xDL](https://github.com/hexhacking/xDL)
