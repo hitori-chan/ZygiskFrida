@@ -3,6 +3,6 @@
 
 #include <string>
 
-void remap_lib(std::string lib_path);
+void remap_lib(std::string const &lib_path);
 
 #endif  // ZYGISKFRIDA_REMAPPER_H

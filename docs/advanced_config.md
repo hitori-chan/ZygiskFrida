@@ -8,10 +8,10 @@ Both configuration are supported with the advanced config taking precedence in c
 
 ## Config File
 
-This module is configured via a json config located at `/data/local/tmp/re.zyg.fri/config.json`.
+This module is configured via a json config located at `/data/adb/modules/zygiskfrida/config.json`.
 To start off, you can copy the example config
 ```shell
-adb shell 'su -c cp /data/local/tmp/re.zyg.fri/config.json.example /data/local/tmp/re.zyg.fri/config.json'
+adb shell 'su -c cp /data/adb/modules/zygiskfrida/config.json.example /data/adb/modules/zygiskfrida/config.json'
 ```
 
 Example config
@@ -24,7 +24,7 @@ Example config
             "start_up_delay_ms": 0,
             "injected_libraries": [
                 {
-                    "path": "/data/local/tmp/re.zyg.fri/libgadget.so"
+                    "path": "libgadget.so"
                 }
             ],
             "child_gating": {
@@ -32,7 +32,7 @@ Example config
                 "mode": "freeze",
                 "injected_libraries" : [
                     {
-                        "path": "/data/local/tmp/re.zyg.fri/libgadget-child.so"
+                        "path": "libgadget-child.so"
                     }
                 ]
             }
@@ -66,10 +66,10 @@ might run checks at start up and delaying the injection can help avoid these.
 These are the libraries that will be injected into the process. The libraries
 specified here will be loaded in the order of the array.
 
-The module includes a bundled frida gadgets at `/data/local/tmp/re.zyg.fri/libgadget.so`.\
-`libgadget.so` default architecture is always that of your device.
+The module includes a bundled frida gadget as `libgadget.so` in the Magisk module directory.\
+Relative library paths are resolved against `/data/adb/modules/zygiskfrida` before app specialization.
 
-For convenience this module also installs a gadget at `/data/local/tmp/re.zyg.fri/libgadget32.so` for injection into application
+For convenience this module also installs a gadget at `libgadget32.so` for injection into application
 with 32-bit only support on 64-bit devices.
 
 You can adjust the gadget config according to the official [Gadget Doc](https://frida.re/docs/gadget/)
@@ -79,12 +79,11 @@ with the path to your own gadget.
 
 Using this you can also inject arbitrary libraries alongside the gadget or without the gadget if
 you remove it.
-Make sure that the libraries you provide here have the correct file permissions set and are accessible
-by the app itself.
+Absolute paths are still accepted, but relative paths are preferred because the module opens them through
+Zygisk's module directory fd before app sandboxing is applied.
 
-The module will setup file permissions in the complete `re.zyg.fri` directory on install. If you suspect
-a file permission issue, an easy way to check is to place your libraies within the `re.zyg.fri` directory
-and install the module again (without uninstalling).
+The module will setup file permissions in the module directory on install. If you suspect a file permission
+issue, place your libraries within `/data/adb/modules/zygiskfrida` and reinstall the module.
 
 
 ## Child gating configuration (experimental)
@@ -127,13 +126,13 @@ You can't load the same file into the process again, a symbolic link won't work 
 F.e.
 
 ```shell
-adb shell 'su -c cp /data/local/tmp/re.zyg.fri/libgadget.so /data/local/tmp/re.zyg.fri/libgadget-child.so'
+adb shell 'su -c cp /data/adb/modules/zygiskfrida/libgadget.so /data/adb/modules/zygiskfrida/libgadget-child.so'
 ```
 
 The default configuration of a gadget will fail to start due to port conflict with the gadget in the parent process.
 So for the child process you would have to configure the gadget to use a different port.
 
-Create a gadget configuration like this at `/data/local/tmp/re.zyg.fri/libgadget-child.config.so`.
+Create a gadget configuration like this at `/data/adb/modules/zygiskfrida/libgadget-child.config.so`.
 See [Gadget Doc](https://frida.re/docs/gadget/) for reference.
 ```
 {

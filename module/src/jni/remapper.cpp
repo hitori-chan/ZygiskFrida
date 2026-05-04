@@ -3,8 +3,11 @@
 #include <link.h>
 #include <sys/mman.h>
 
+#include <cerrno>
 #include <cinttypes>
+#include <cstdio>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -16,18 +19,16 @@ struct PROCMAPSINFO {
     uintptr_t start, end, offset;
     uint8_t perms;
     ino_t inode;
-    char* dev;
-    char* path;
+    std::string dev;
+    std::string path;
 };
 
 
-std::vector<PROCMAPSINFO> get_modules_by_name(std::string mName) {
-    std::string process_maps_locations = "/proc/self/maps";
-
+std::vector<PROCMAPSINFO> get_modules_by_name(std::string const &mName) {
     std::vector<PROCMAPSINFO> maps;
 
     char buffer[512];
-    FILE *fp = fopen(process_maps_locations.c_str(), "re");
+    FILE *fp = fopen("/proc/self/maps", "re");
 
     if (fp == nullptr) {
         return maps;
@@ -40,16 +41,18 @@ std::vector<PROCMAPSINFO> get_modules_by_name(std::string mName) {
             char path[255];
             char dev[25];
 
-            sscanf(
+            int matched = sscanf(
                 buffer,
                 "%" SCNxPTR "-%" SCNxPTR " %s %" SCNxPTR " %s %ld %s",
                 &info.start, &info.end, perms, &info.offset, dev, &info.inode, path);
+            if (matched < 7) {
+                continue;
+            }
 
             /* Store process permissions in the struct directly via bitwise operations */
             if (strchr(perms, 'r')) info.perms |= PROT_READ;
             if (strchr(perms, 'w')) info.perms |= PROT_WRITE;
             if (strchr(perms, 'x')) info.perms |= PROT_EXEC;
-            if (strchr(perms, 'r')) info.perms |= PROT_READ;
 
             info.dev = dev;
             info.path = path;
@@ -63,35 +66,43 @@ std::vector<PROCMAPSINFO> get_modules_by_name(std::string mName) {
     return maps;
 }
 
-void remap_lib(std::string lib_path) {
+void remap_lib(std::string const &lib_path) {
     std::string lib_name = lib_path.substr(lib_path.find_last_of("/\\") + 1);
 
     std::vector<PROCMAPSINFO> maps = get_modules_by_name(lib_name);
-    if (maps.size() == 0) {
+    if (maps.empty()) {
         return;
     }
 
     LOGI("Remapping %s", lib_name.c_str());
 
-    for (PROCMAPSINFO info : maps) {
+    for (PROCMAPSINFO const &info : maps) {
         void *address = reinterpret_cast<void *>(info.start);
         size_t size = info.end - info.start;
 
         void *map = mmap(0, size, PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-
-        if ((info.perms & PROT_READ) == 0) {
-            LOGI("Removing memory protection: %s", info.path);
-            mprotect(address, size, PROT_READ);
+        if (map == MAP_FAILED) {
+            LOGE("Failed to allocate remap memory: %s", strerror(errno));
+            return;
         }
 
-        if (map == nullptr) {
-            LOGE("Failed to Allocate Memory: %s", strerror(errno));
-            return;
+        if ((info.perms & PROT_READ) == 0) {
+            LOGI("Removing memory protection: %s", info.path.c_str());
+            if (mprotect(address, size, PROT_READ) != 0) {
+                LOGE("Failed to remove memory protection: %s", strerror(errno));
+                munmap(map, size);
+                return;
+            }
         }
 
         /* Copy the in-memory data to new virtual location via the memove, allocate and commit it via mremap */
         std::memmove(map, address, size);
-        mremap(map, size, size, MREMAP_MAYMOVE | MREMAP_FIXED, info.start);
+        void *remapped = mremap(map, size, size, MREMAP_MAYMOVE | MREMAP_FIXED, info.start);
+        if (remapped == MAP_FAILED) {
+            LOGE("Failed to remap memory: %s", strerror(errno));
+            munmap(map, size);
+            return;
+        }
 
         /* Re-apply memory protections */
         mprotect(reinterpret_cast<void *>(info.start), size, info.perms);

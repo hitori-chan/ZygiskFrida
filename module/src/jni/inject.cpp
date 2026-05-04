@@ -4,9 +4,7 @@
 
 #include <chrono>
 #include <cinttypes>
-#include <filesystem>
 #include <fstream>
-#include <memory>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -65,6 +63,12 @@ static void delay_start_up(uint64_t start_up_delay_ms) {
     }
 }
 
+static void close_library_fds(target_config const &cfg) {
+    for (int fd : cfg.injected_library_fds) {
+        close(fd);
+    }
+}
+
 void inject_lib(std::string const &lib_path, std::string const &logContext) {
     auto *handle = xdl_open(lib_path.c_str(), XDL_TRY_FORCE_LOAD);
     if (handle) {
@@ -101,31 +105,26 @@ static void inject_libs(target_config const &cfg) {
 
     delay_start_up(cfg.start_up_delay_ms);
 
-    for (auto &lib_path : cfg.injected_libraries) {
+    for (auto const &lib_path : cfg.injected_libraries) {
         LOGI("Injecting %s", lib_path.c_str());
         inject_lib(lib_path, "");
     }
+
+    if (!cfg.child_gating.enabled || cfg.child_gating.mode != "inject") {
+        close_library_fds(cfg);
+    }
 }
 
-bool check_and_inject(std::string const &app_name) {
-    std::string module_dir = std::string("/data/local/tmp/re.zyg.fri");
-
-    std::optional<target_config> cfg = load_config(module_dir, app_name);
-    if (!cfg.has_value()) {
-        return false;
-    }
-
+bool check_and_inject(std::string const &app_name, target_config cfg) {
     LOGI("App detected: %s", app_name.c_str());
     LOGI("PID: %d", getpid());
 
-
-    auto target_config = cfg.value();
-    if (!target_config.enabled) {
+    if (!cfg.enabled) {
         LOGI("Injection disabled for %s", app_name.c_str());
         return false;
     }
 
-    std::thread inject_thread(inject_libs, target_config);
+    std::thread inject_thread(inject_libs, std::move(cfg));
     inject_thread.detach();
 
     return true;
