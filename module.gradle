@@ -4,8 +4,8 @@ ext {
     moduleName = "ZygiskFrida"
     moduleAuthor = "lico-n, hitori-chan"
     moduleDescription = "Injects frida gadget via zygisk."
-    moduleVersion = "v1.10.1"
-    moduleVersionCode = 14
+    moduleVersion = "v1.10.2"
+    moduleVersionCode = 15
     moduleUpdateJson = "https://raw.githubusercontent.com/hitori-chan/ZygiskFrida/main/update.json"
 
     // Frida

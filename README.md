@@ -19,7 +19,7 @@ more stealthy way.
 
 The module zip contains two separate native components:
 
-- `libzygiskfrida.so` is built from this codebase and loaded by Zygisk.
+- `libzygiskfrida.so` is built directly from the Rust crate in this codebase and loaded by Zygisk.
 - `libgadget.so` is the bundled Frida Gadget loaded into configured target apps.
 
 During app specialization, ZygiskFrida reads its config from the Magisk module directory
@@ -43,7 +43,9 @@ temporary storage.
 adb shell 'su -c cp /data/adb/modules/zygiskfrida/config.json.example /data/adb/modules/zygiskfrida/config.json'
 adb shell 'su -c sed -i s/com.example.package/your.target.application/ /data/adb/modules/zygiskfrida/config.json'
 ```
-- Launch your app. It will pause at startup allowing you to attach
+- The default config stages the gadget under the target app data directory so
+  Frida can read its sidecar config after app sandboxing.
+- Launch your app and attach to the gadget
   f.e. `frida -U -N your.target.application` or `frida -U -n Gadget`
 
 This assumes that you don't have any other frida server running (f.e. by using MagiskFrida).
@@ -73,4 +75,3 @@ You can also build and install the module to your device directly with `./gradle
 ## Credits
 
 - Inspired by [Zygisk-Il2CppDumper](https://github.com/Perfare/Zygisk-Il2CppDumper)
-- [xDL](https://github.com/hexhacking/xDL)

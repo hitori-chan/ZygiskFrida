@@ -1,10 +1,11 @@
 import org.apache.tools.ant.filters.FixCrLfFilter
 import org.apache.tools.ant.filters.ReplaceTokens
-import com.android.build.api.artifact.SingleArtifact
 
 import java.nio.file.Paths
 import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import java.util.Locale
 
 plugins {
     id "de.undercouch.download" version "5.4.0"
@@ -13,9 +14,94 @@ plugins {
 apply plugin: 'com.android.library'
 apply from: file(rootProject.file('module.gradle'))
 
-dependencies {
-    implementation 'dev.rikka.ndk.thirdparty:cxx:1.2.0'
-    implementation("io.github.vvb2060.ndk:dobby:1.2")
+def rustTargets = [
+        "armeabi-v7a": [
+                target: "armv7-linux-androideabi",
+                linker: "armv7a-linux-androideabi${rootProject.ext.targetSdkVersion}-clang",
+                linkerEnv: "CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER",
+        ],
+        "arm64-v8a": [
+                target: "aarch64-linux-android",
+                linker: "aarch64-linux-android${rootProject.ext.targetSdkVersion}-clang",
+                linkerEnv: "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER",
+        ],
+        "x86": [
+                target: "i686-linux-android",
+                linker: "i686-linux-android${rootProject.ext.targetSdkVersion}-clang",
+                linkerEnv: "CARGO_TARGET_I686_LINUX_ANDROID_LINKER",
+        ],
+        "x86_64": [
+                target: "x86_64-linux-android",
+                linker: "x86_64-linux-android${rootProject.ext.targetSdkVersion}-clang",
+                linkerEnv: "CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER",
+        ],
+]
+
+def androidSdkDir = {
+    def sdkDir = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
+    if (sdkDir == null) {
+        def localPropertiesFile = rootProject.file("local.properties")
+        if (localPropertiesFile.exists()) {
+            def localProperties = new Properties()
+            localPropertiesFile.withInputStream { localProperties.load(it) }
+            sdkDir = localProperties.getProperty("sdk.dir")
+        }
+    }
+    if (sdkDir == null) {
+        throw new GradleException("Android SDK path is required; set ANDROID_HOME, ANDROID_SDK_ROOT, or sdk.dir")
+    }
+    file(sdkDir)
+}
+
+def adbExecutable = {
+    def executable = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("windows") ? "adb.exe" : "adb"
+    def adb = file("${androidSdkDir()}/platform-tools/${executable}")
+    if (!adb.exists()) {
+        throw new GradleException("adb not found at ${adb}")
+    }
+    adb.absolutePath
+}
+
+tasks.register("buildRust") {
+    def rustDir = file("src/rust")
+    def cargoTargetDir = layout.buildDirectory.dir("cargo")
+    def rustJniLibsDir = layout.buildDirectory.dir("rustJniLibs")
+
+    inputs.dir("$rustDir/src")
+    inputs.file("$rustDir/Cargo.toml")
+    inputs.file("$rustDir/Cargo.lock")
+    outputs.files(rustTargets.keySet().collect { abi ->
+        rustJniLibsDir.get().file("${abi}/libzygiskfrida.so").asFile
+    })
+
+    doLast {
+        def osName = System.getProperty("os.name").toLowerCase(Locale.ROOT)
+        def hostTag = osName.contains("mac") ? "darwin-x86_64" : "linux-x86_64"
+        def ndkToolchainDir = file("${androidSdkDir()}/ndk/${android.ndkVersion}/toolchains/llvm/prebuilt/${hostTag}/bin")
+        if (!ndkToolchainDir.exists()) {
+            throw new GradleException("Android NDK LLVM toolchain not found at ${ndkToolchainDir}")
+        }
+
+        rustTargets.values().each { cfg ->
+            exec {
+                workingDir rustDir
+                commandLine "rustup", "target", "add", cfg.target
+            }
+        }
+
+        rustTargets.each { abi, cfg ->
+            exec {
+                workingDir rustDir
+                environment cfg.linkerEnv, file("$ndkToolchainDir/${cfg.linker}").absolutePath
+                environment "CARGO_TARGET_DIR", cargoTargetDir.get().asFile.absolutePath
+                commandLine "cargo", "build", "--release", "--target", cfg.target, "--locked"
+            }
+            def cargoOutput = cargoTargetDir.get().file("${cfg.target}/release/libzygiskfrida.so").asFile
+            def jniLib = rustJniLibsDir.get().file("${abi}/libzygiskfrida.so").asFile
+            jniLib.parentFile.mkdirs()
+            Files.copy(cargoOutput.toPath(), jniLib.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
+    }
 }
 
 task downloadFrida(type: Download) {
@@ -50,31 +136,24 @@ android {
     defaultConfig {
         minSdk = rootProject.ext.minSdkVersion
         targetSdk = rootProject.ext.targetSdkVersion
-
-        externalNativeBuild {
-            ndkBuild {
-                arguments += "MODULE_VERSION_CODE=$moduleVersionCode"
-                arguments += "MODULE_VERSION_NAME=$moduleVersion"
-            }
-        }
-
-    }
-    buildFeatures {
-        prefab = true
     }
 
-    externalNativeBuild {
-        ndkBuild {
-            path "src/jni/Android.mk"
+    sourceSets {
+        main {
+            jniLibs.srcDir file("$buildDir/rustJniLibs")
         }
     }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn("buildRust")
 }
 
 androidComponents {
     onVariants(selector().all()) { variant ->
         def variantCapped = variant.name.capitalize()
         def buildTypeLowered = variant.buildType
-        def nativeLibs = variant.artifacts.get(SingleArtifact.MERGED_NATIVE_LIBS.INSTANCE)
+        def rustJniLibsDir = layout.buildDirectory.dir("rustJniLibs")
 
         def zipName = "${moduleName}-${moduleVersion}-${buildTypeLowered}.zip"
         def magiskDir = file("${outDir}/magisk_module_${buildTypeLowered}")
@@ -116,7 +195,7 @@ androidComponents {
                 filter(ReplaceTokens.class, tokens: tokens)
                 filter(FixCrLfFilter.class, eol: FixCrLfFilter.CrLf.newInstance("lf"))
             }
-            from(nativeLibs) {
+            from(rustJniLibsDir) {
                 into 'lib'
             }
             from("$rootDir/gadget") {
@@ -156,18 +235,24 @@ androidComponents {
         tasks.register("push${variantCapped}", Exec) {
             dependsOn(zipTask)
             workingDir outDir
-            commandLine android.adbExecutable, "push", zipName, "/data/local/tmp/"
+            doFirst {
+                commandLine adbExecutable(), "push", zipName, "/data/local/tmp/"
+            }
         }
 
         tasks.register("flash${variantCapped}", Exec) {
             dependsOn("push${variantCapped}")
-            commandLine android.adbExecutable, "shell", "su", "-c",
-                    "magisk --install-module /data/local/tmp/${zipName}"
+            doFirst {
+                commandLine adbExecutable(), "shell", "su", "-c",
+                        "magisk --install-module /data/local/tmp/${zipName}"
+            }
         }
 
         tasks.register("flashAndReboot${variantCapped}", Exec) {
             dependsOn("flash${variantCapped}")
-            commandLine android.adbExecutable, "shell", "reboot"
+            doFirst {
+                commandLine adbExecutable(), "shell", "reboot"
+            }
         }
 
         tasks.matching { it.name == "assemble${variantCapped}" }.configureEach {

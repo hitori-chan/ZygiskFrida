@@ -22,6 +22,7 @@ Example config
             "app_name" : "com.example.package",
             "enabled": true,
             "start_up_delay_ms": 0,
+            "stage_libraries_in_app_data": true,
             "injected_libraries": [
                 {
                     "path": "libgadget.so"
@@ -61,6 +62,22 @@ Injection of libraries is delayed by this amount in milliseconds.
 
 There are times that you might want to delay the injection of the gadget. Some applications
 might run checks at start up and delaying the injection can help avoid these.
+
+### stage_libraries_in_app_data
+When enabled, ZygiskFrida copies each configured library into
+`<app_data_dir>/files/zygiskfrida/` before app specialization and injects the
+staged copy after specialization. The staged files are owned by the target app UID.
+
+This is recommended for Frida Gadget on modern Android because the gadget opens
+its sidecar config file after the process is already running under the app
+sandbox. A gadget loaded from `/data/adb/modules/zygiskfrida/libgadget.so` may be
+able to execute while still failing to read
+`/data/adb/modules/zygiskfrida/libgadget.config.so`.
+
+If a matching sidecar config exists next to the configured library, for example
+`libgadget.config.so` next to `libgadget.so`, it is staged with the library. If
+no sidecar exists for a `libgadget*` library, ZygiskFrida writes a default
+listen-mode config with `on_load` set to `resume`.
 
 ### injected_libraries
 These are the libraries that will be injected into the process. The libraries
