@@ -1,10 +1,11 @@
 {
+    "config_version": 2,
     "targets": [
         {
             "app_name" : "com.example.package",
             "enabled": true,
             "start_up_delay_ms": 0,
-            "stage_libraries_in_app_data": true,
+            "staging": "app_data",
             "injected_libraries": [
                 {
                     "path": "libgadget.so"

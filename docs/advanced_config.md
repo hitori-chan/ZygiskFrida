@@ -1,14 +1,13 @@
 # Advanced Config
 
-For the previous configuration method with various files, see [simple config](simple_config.md).
-It remains a valid method of configuration but the structured configuration method specified here is the preferred
-method in the future and also supports more features.
-
-Both configuration are supported with the advanced config taking precedence in case an app appears in both.
+ZygiskFrida now uses the v2 structured JSON configuration described here.
+The previous `target_packages` and `injected_libraries` files are no longer
+loaded by the runtime; see [simple config](simple_config.md) only when migrating
+an older install.
 
 ## Config File
 
-This module is configured via a json config located at `/data/adb/modules/zygiskfrida/config.json`.
+This module is configured via a JSON config located at `/data/adb/modules/zygiskfrida/config.json`.
 To start off, you can copy the example config
 ```shell
 adb shell 'su -c cp /data/adb/modules/zygiskfrida/config.json.example /data/adb/modules/zygiskfrida/config.json'
@@ -17,12 +16,13 @@ adb shell 'su -c cp /data/adb/modules/zygiskfrida/config.json.example /data/adb/
 Example config
 ```json
 {
+    "config_version": 2,
     "targets": [
         {
             "app_name" : "com.example.package",
             "enabled": true,
             "start_up_delay_ms": 0,
-            "stage_libraries_in_app_data": true,
+            "staging": "app_data",
             "injected_libraries": [
                 {
                     "path": "libgadget.so"
@@ -42,8 +42,16 @@ Example config
 }
 ```
 
-The config contains an array of targets. A target contains the configuration for one application
-you want to inject with frida.
+The config contains `config_version: 2` and an array of targets. A target
+contains the configuration for one application you want to inject with Frida.
+If `enabled`, `start_up_delay_ms`, `staging`, or `injected_libraries` are
+omitted, the target defaults to enabled, no delay, app-data staging, and the
+bundled `libgadget.so`.
+
+Config validation is strict. Empty app names, duplicate targets, empty library
+lists, duplicate library paths, invalid paths, unknown fields, unsupported
+config versions, and child-gating `inject` mode without child libraries disable
+the target safely and log the validation error.
 
 In case things are not working as expected, check `adb logcat -s ZygiskFrida` to see if an error is logged.
 
@@ -60,13 +68,24 @@ This is useful if you want to temporarily disable a target while maintaining the
 ### start_up_delay_ms
 Injection of libraries is delayed by this amount in milliseconds.
 
-There are times that you might want to delay the injection of the gadget. Some applications
-might run checks at start up and delaying the injection can help avoid these.
+This is useful when you need Gadget or helper libraries to initialize after a
+specific point in the app lifecycle.
 
-### stage_libraries_in_app_data
-When enabled, ZygiskFrida copies each configured library into
-`<app_data_dir>/files/zygiskfrida/` before app specialization and injects the
+### staging
+`staging` controls how configured libraries are made available after app
+specialization. Supported values are:
+
+- `app_data`: copy each configured library into the target app data directory.
+- `disabled`: load the original absolute path or module-directory file
+  descriptor directly.
+
+When set to `app_data`, ZygiskFrida copies each configured library into
+`<app_data_dir>/files/.zygiskfrida/` before app specialization and injects the
 staged copy after specialization. The staged files are owned by the target app UID.
+Generated staged names use the runtime role and index plus a local FNV-1a hash:
+`0000-<hash>.so` for libraries and `0000-<hash>.config.so` for sidecar configs.
+Child-gating injected libraries keep the separate `4000-<hash>.so` index range.
+The generated staged names do not include the configured source library basename.
 
 This is recommended for Frida Gadget on modern Android because the gadget opens
 its sidecar config file after the process is already running under the app
@@ -77,7 +96,17 @@ able to execute while still failing to read
 If a matching sidecar config exists next to the configured library, for example
 `libgadget.config.so` next to `libgadget.so`, it is staged with the library. If
 no sidecar exists for a `libgadget*` library, ZygiskFrida writes a default
-listen-mode config with `on_load` set to `resume`.
+listen-mode config with `on_load` set to `resume`. Staging uses atomic
+copy-then-rename and removes stale files matching ZygiskFrida's generated
+`0000-<hash>*` naming pattern when they are not part of the current in-memory
+plan. During migration from older v2 builds, it also removes old generated
+`files/zygiskfrida/0000-*` files while preserving unrelated files in that
+legacy directory.
+
+This staging cleanup only reduces artifacts created by ZygiskFrida. It is not a
+bypass layer and does not hide Frida protocol traffic or ports, change Gadget
+package filenames, obfuscate the Magisk module id/package layout, hide syscalls
+or `/proc`, bypass app/security checks, or expand inline hook behavior.
 
 ### injected_libraries
 These are the libraries that will be injected into the process. The libraries
@@ -106,9 +135,12 @@ issue, place your libraries within `/data/adb/modules/zygiskfrida` and reinstall
 ## Child gating configuration (experimental)
 This is an experimental feature and has a lot of caveats! Please read carefully.
 
-This module is able to intercept fork/vfork within the process to instrument child processes.
-An application might fork a child process to run checks from there that you can't intercept
-without child gating.
+This module is able to intercept fork/vfork within the process to instrument
+child processes spawned by the target app.
+
+Only `fork` and `vfork` are hooked by the current Zygisk PLT-hook backend.
+`clone` and `clone3` are not supported because this module does not add inline
+hook machinery.
 
 By enabling this feature by setting `enabled` to true, you can configure how to deal
 with these child processes.

@@ -44,6 +44,10 @@ pub(crate) fn log_message(priority: c_int, message: String) {
     }
 }
 
+pub(crate) fn verbose_diagnostics() -> bool {
+    cfg!(any(debug_assertions, feature = "verbose-logs"))
+}
+
 #[macro_export]
 macro_rules! logi {
     ($($arg:tt)*) => {

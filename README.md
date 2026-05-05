@@ -7,13 +7,12 @@
 
 ## Introduction
 
-[ZygiskFrida](README.md) is a zygisk module allowing you to inject frida gadget in Android applications in a
-more stealthy way.
+[ZygiskFrida](README.md) is a Zygisk module for injecting Frida Gadget into Android applications you own or are authorized to instrument.
 
-- The gadget is not embedded into the APK itself. So APK Integrity/Signature checks will still pass.
-- The process is not being ptraced like it is with frida-server. Avoiding ptrace based detection.
-- Control about the injection time of the gadget.
-- Allows you to load multiple arbitrary libraries into the process.
+- The gadget is not embedded into the APK itself.
+- The process is not ptraced like it is with frida-server.
+- Injection timing is configurable.
+- Multiple native libraries can be loaded in a configured order.
 
 ## How it works
 
@@ -43,8 +42,9 @@ temporary storage.
 adb shell 'su -c cp /data/adb/modules/zygiskfrida/config.json.example /data/adb/modules/zygiskfrida/config.json'
 adb shell 'su -c sed -i s/com.example.package/your.target.application/ /data/adb/modules/zygiskfrida/config.json'
 ```
-- The default config stages the gadget under the target app data directory so
-  Frida can read its sidecar config after app sandboxing.
+- The default config stages the gadget under `<app_data_dir>/files/.zygiskfrida`
+  using generated file names so Frida can read its sidecar config after app
+  sandboxing without exposing the source library basename in staged files.
 - Launch your app and attach to the gadget
   f.e. `frida -U -N your.target.application` or `frida -U -n Gadget`
 
@@ -54,11 +54,22 @@ to use a different port.
 
 ### Configuration
 
-This module also supports adding a start up delay that can delay injection of the gadget to
-avoid checks run at startup time, loading arbitrary libraries and child gating.
-Use relative library paths in `config.json` when the libraries are stored in the module directory.
+Configuration uses the v2 JSON schema in `config.json`. It supports start up
+delay, arbitrary library load order, app-data staging, and child gating. Use
+relative library paths when the libraries are stored in the module directory.
 
 Please take a look at the [configuration guide](docs/advanced_config.md) for this.
+
+## Surface cleanup scope
+
+The v2 runtime defaults to app-data staging with generated staged names under
+`<app_data_dir>/files/.zygiskfrida`. This reduces artifacts created by
+ZygiskFrida itself, such as basename-bearing staged files and path-heavy release
+diagnostics.
+
+This cleanup is intentionally narrow. It does not hide Frida's protocol, ports,
+Gadget behavior, Magisk module identity, package layout, syscalls, `/proc`
+visibility, or app/security checks.
 
 ## How to build
 

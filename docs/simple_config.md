@@ -1,63 +1,43 @@
 # Simple Config
 
-Please consider using the [structured config](advanced_config.md) instead.
+The previous file-based configuration using `target_packages` and
+`injected_libraries` is no longer loaded by ZygiskFrida.
 
-This file is about the previous configuration method via different files
-using `target_packages` and `injected_libraries` and doesn't support all the
-features.
+Use the v2 JSON config at `/data/adb/modules/zygiskfrida/config.json` instead:
 
-`/data/adb/modules/zygiskfrida/target_packages` is a simple text file
-containing all the package names you want to inject frida into.
-
-It accepts one package name per line f.e.
-```
-adb shell 'su -c "echo com.example.package > /data/adb/modules/zygiskfrida/target_packages"'
+```shell
+adb shell 'su -c cp /data/adb/modules/zygiskfrida/config.json.example /data/adb/modules/zygiskfrida/config.json'
 ```
 
-**Start up delay**
+Equivalent v2 config for a legacy `target_packages` entry of
+`com.example.package,20000` with the default Gadget:
 
-There are times that you might want to delay the injection of the gadget. Some applications
-might run checks at start up and delaying the injection can help avoid these.
-
-`/data/adb/modules/zygiskfrida/target_packages` accepts a start up delay in milliseconds.
-You can provide it separated by a comma from the package_name.
-
-f.e.
-```
-adb shell 'su -c "echo com.example.package,20000 > /data/adb/modules/zygiskfrida/target_packages"'
-```
-would inject the gadget after a delay of 20 seconds.
-
-You get a 10 seconds countdown to injection in the ZygiskFrida logs `adb logcat -S ZygiskFrida`.
-This can help if you want to time the injection with app interactions.
-
-**Gadget version and config**
-
-The bundled gadget is located at `/data/adb/modules/zygiskfrida/libgadget.so`.\
-You can follow the [Gadget Docs](https://frida.re/docs/gadget/) and add additional
-gadget config and scripts in that location.
-
-In case you want to use a different gadget version than the one bundled, you can simply
-replace the `libgadget.so` with your own frida gadget.
-
-**Loading arbitrary libraries**
-
-This module also allows you to load arbitrary .so libraries into the process.\
-This can allow you to load additional helper libraries for the gadget or
-enable any other use case that might need libraries loaded into the app process.
-
-For this you can add the file `/data/adb/modules/zygiskfrida/injected_libraries`.\
-The file should consist of file paths to libraries. Relative paths are resolved against the module directory.
-The libraries are loaded in the order they are specified in the file.
-
-Example file content that would first load libhelperexample.so and then the bundled frida-gadget:
-```
-libhelperexample.so
-libgadget.so
+```json
+{
+  "config_version": 2,
+  "targets": [
+    {
+      "app_name": "com.example.package",
+      "enabled": true,
+      "start_up_delay_ms": 20000,
+      "staging": "app_data",
+      "injected_libraries": [
+        {
+          "path": "libgadget.so"
+        }
+      ]
+    }
+  ]
+}
 ```
 
-Relative paths are opened through Zygisk's module directory fd before app sandboxing is applied.
+For arbitrary libraries, add them to `injected_libraries` in load order. Relative
+paths are resolved against the module directory before app sandboxing is applied.
+With the default `app_data` staging mode, ZygiskFrida copies those libraries into
+`<app_data_dir>/files/.zygiskfrida` using generated names like
+`0000-<hash>.so` and `0000-<hash>.config.so`; the staged names do not include
+the source library basename.
 
-If you want the frida gadget to start, you need to explicitly specify the bundled frida-gadget at
-`libgadget.so`.\
-You can also choose to specify your own gadget this way or omit the gadget altogether.
+This only reduces ZygiskFrida-created staging artifacts. It does not hide Frida
+protocol traffic, ports, Gadget behavior, module identity, syscalls, `/proc`, or
+app/security checks.

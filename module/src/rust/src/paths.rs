@@ -21,6 +21,28 @@ pub(crate) fn close_fd(fd: c_int) {
     }
 }
 
+pub(crate) fn current_pid() -> libc::pid_t {
+    unsafe { libc::getpid() }
+}
+
+#[cfg(test)]
+pub(crate) fn current_uid() -> libc::uid_t {
+    unsafe { libc::getuid() }
+}
+
+#[cfg(test)]
+pub(crate) fn current_gid() -> libc::gid_t {
+    unsafe { libc::getgid() }
+}
+
+pub(crate) fn duplicate_fd(fd: c_int) -> Result<OwnedFd, String> {
+    let dup_fd = unsafe { libc::dup(fd) };
+    if dup_fd < 0 {
+        return Err(last_errno());
+    }
+    Ok(unsafe { OwnedFd::from_raw_fd(dup_fd) })
+}
+
 pub(crate) fn module_fd_path(module_dir_fd: c_int, name: &str) -> PathBuf {
     PathBuf::from(format!("/proc/self/fd/{module_dir_fd}/{name}"))
 }
@@ -45,23 +67,6 @@ pub(crate) fn basename(path: &str) -> Option<&str> {
     Some(name)
 }
 
-pub(crate) fn sanitize_component(value: &str) -> Option<String> {
-    let mut output = String::with_capacity(value.len().min(180));
-    for byte in value.bytes().take(180) {
-        let normalized = match byte {
-            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'.' | b'_' | b'-' => byte as char,
-            _ => '_',
-        };
-        output.push(normalized);
-    }
-
-    if output.is_empty() {
-        None
-    } else {
-        Some(output)
-    }
-}
-
 pub(crate) fn config_name_for_library(library_name: &str) -> String {
     if let Some(stem) = library_name.strip_suffix(".so") {
         format!("{stem}.config.so")
@@ -74,11 +79,38 @@ pub(crate) fn sidecar_name_for_library(library_path: &str) -> Option<String> {
     Some(config_name_for_library(basename(library_path)?))
 }
 
-pub(crate) fn build_stage_names(source_path: &str, index: usize) -> Option<(String, String)> {
-    let basename = sanitize_component(basename(source_path)?)?;
-    let library_name = format!("{index:04x}-{basename}");
-    let config_name = config_name_for_library(&library_name);
+pub(crate) fn build_stage_names(
+    source_path: &str,
+    role: &str,
+    index: usize,
+) -> Option<(String, String)> {
+    basename(source_path)?;
+    let hash = fnv1a64_stage_hash(source_path, role, index);
+    let stem = format!("{index:04x}-{hash:016x}");
+    let library_name = format!("{stem}.so");
+    let config_name = format!("{stem}.config.so");
     Some((library_name, config_name))
+}
+
+fn fnv1a64_stage_hash(source_path: &str, role: &str, index: usize) -> u64 {
+    const OFFSET: u64 = 0xcbf29ce484222325;
+    const PRIME: u64 = 0x100000001b3;
+
+    let mut hash = OFFSET;
+    let index_bytes = index.to_le_bytes();
+    for bytes in [
+        source_path.as_bytes(),
+        b"\0",
+        role.as_bytes(),
+        b"\0",
+        &index_bytes,
+    ] {
+        for byte in bytes {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(PRIME);
+        }
+    }
+    hash
 }
 
 pub(crate) fn openat_owned(
@@ -117,30 +149,38 @@ mod tests {
 
     #[test]
     fn builds_config_name_for_gadget_so() {
-        let (library, config) = build_stage_names("libgadget.so", 7).unwrap();
+        let (library, config) = build_stage_names("libgadget.so", "parent", 7).unwrap();
 
-        assert_eq!(library, "0007-libgadget.so");
-        assert_eq!(config, "0007-libgadget.config.so");
+        assert!(library.starts_with("0007-"));
+        assert!(library.ends_with(".so"));
+        assert_eq!(config, library.replace(".so", ".config.so"));
+        assert!(!library.contains("libgadget"));
     }
 
     #[test]
     fn keeps_libraries_in_subdirs_from_colliding() {
-        let (library, config) = build_stage_names("subdir/libgadget-child.so", 0x4000).unwrap();
+        let (library, config) =
+            build_stage_names("subdir/libgadget-child.so", "child", 0x4000).unwrap();
 
-        assert_eq!(library, "4000-libgadget-child.so");
-        assert_eq!(config, "4000-libgadget-child.config.so");
+        assert!(library.starts_with("4000-"));
+        assert!(library.ends_with(".so"));
+        assert_eq!(config, library.replace(".so", ".config.so"));
+        assert!(!library.contains("libgadget"));
     }
 
     #[test]
-    fn normalizes_unsafe_filename_bytes() {
-        let (library, config) = build_stage_names("../lib gadget.so", 1).unwrap();
+    fn generated_stage_names_are_deterministic() {
+        let first = build_stage_names("../lib gadget.so", "parent", 1).unwrap();
+        let second = build_stage_names("../lib gadget.so", "parent", 1).unwrap();
+        let child = build_stage_names("../lib gadget.so", "child", 1).unwrap();
 
-        assert_eq!(library, "0001-lib_gadget.so");
-        assert_eq!(config, "0001-lib_gadget.config.so");
+        assert_eq!(first, second);
+        assert_ne!(first, child);
+        assert_eq!(first.0.len(), "0001-0000000000000000.so".len());
     }
 
     #[test]
     fn rejects_empty_basename() {
-        assert!(build_stage_names("/", 1).is_none());
+        assert!(build_stage_names("/", "parent", 1).is_none());
     }
 }
