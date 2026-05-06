@@ -2,17 +2,18 @@
 
 > [Frida](https://frida.re) is a dynamic instrumentation toolkit for developers, reverse-engineers, and security researchers
 
-> [Zygisk](https://github.com/topjohnwu/Magisk) part of Magisk allows you to run code in every Android application's Process.
+> [Zygisk](https://github.com/topjohnwu/Magisk) is part of Magisk and allows you to run code in every Android application's process.
 
 
 ## Introduction
 
-[ZygiskFrida](README.md) is a Zygisk module for injecting Frida Gadget into Android applications you own or are authorized to instrument.
+[ZygiskFrida](README.md) is a Zygisk module allowing you to inject Frida Gadget in Android applications in a
+more controlled way.
 
-- The gadget is not embedded into the APK itself.
-- The process is not ptraced like it is with frida-server.
-- Injection timing is configurable.
-- Multiple native libraries can be loaded in a configured order.
+- The gadget is not embedded into the APK itself. So APK Integrity/Signature checks will still pass.
+- The process is not being ptraced like it is with frida-server. Avoiding ptrace based detection.
+- Control over the injection time of the gadget.
+- Allows you to load multiple arbitrary libraries into the process.
 
 ## How it works
 
@@ -46,17 +47,19 @@ adb shell 'su -c sed -i s/com.example.package/your.target.application/ /data/adb
   using generated file names so Frida can read its sidecar config after app
   sandboxing without exposing the source library basename in staged files.
 - Launch your app and attach to the gadget
-  f.e. `frida -U -N your.target.application` or `frida -U -n Gadget`
+  e.g. `frida -U -N your.target.application` or `frida -U -n Gadget`
 
-This assumes that you don't have any other frida server running (f.e. by using MagiskFrida).
+This assumes that you don't have any other frida server running, e.g. by using MagiskFrida.
 You can still run it together with frida-server but you would have to configure the gadget
 to use a different port.
 
 ### Configuration
 
-Configuration uses the v2 JSON schema in `config.json`. It supports start up
+Configuration uses the v2 JSON schema in `config.json`. It supports startup
 delay, arbitrary library load order, app-data staging, and child gating. Use
 relative library paths when the libraries are stored in the module directory.
+This keeps the original module direction of delayed gadget injection, loading
+arbitrary libraries, and child gating while using the current structured config.
 
 Please take a look at the [configuration guide](docs/advanced_config.md) for this.
 
@@ -74,15 +77,20 @@ visibility, or app/security checks.
 ## How to build
 
 - Checkout the project
-- Run `./gradlew :module:assembleRelease`
-- The build magisk module should then be in the `out` directory.
+- Install Rust, `curl`, and Android SDK/NDK `25.2.9519653`.
+- Set `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or `sdk.dir` in `local.properties`.
+- Run `cargo xtask package`
+- The built Magisk module should then be in the `out` directory.
 
-You can also build and install the module to your device directly with `./gradlew :module:flashAndRebootRelease`
+You can also build and install the module to your device directly with
+`cargo xtask flash-and-reboot`.
 
 ## Caveats
 
 - For emulators this will start the gadget in native realm. This means that you will be able to hook Java but not native functions.
+- This is not yet tested very well on different devices. In case this is not working, reports with logs from `adb logcat -s ZygiskFrida` are welcome.
 
 ## Credits
 
 - Inspired by [Zygisk-Il2CppDumper](https://github.com/Perfare/Zygisk-Il2CppDumper)
+- Historical versions used [xDL](https://github.com/hexhacking/xDL)

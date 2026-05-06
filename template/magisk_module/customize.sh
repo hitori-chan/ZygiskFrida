@@ -55,7 +55,7 @@ if [ "$IS64BIT" = true ]; then
   extract "$ZIPFILE" "lib/$LIB64_NAME" "$LIB64_DEST" true
 fi
 
-ui_print "- Extracting bundled frida gadget"
+ui_print "- Extracting bundled Frida Gadget"
 
 extract "$ZIPFILE" "gadget/libgadget-$ARCH.so.xz" "$MODPATH" true
 mv "$MODPATH/libgadget-$ARCH.so.xz" "$MODPATH/libgadget.so.xz"

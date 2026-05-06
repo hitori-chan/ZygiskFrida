@@ -17,11 +17,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
-      - uses: actions/setup-java@99b8673ff64fbf99d8d325f52d9a5bdedb8483e9 # v4.2.1
-        with:
-          distribution: temurin
-          java-version: 21
-          cache: gradle
       - name: Install Rust Android targets
         run: >
           rustup target add
@@ -40,19 +35,16 @@ jobs:
             "build-tools;36.0.0" \
             "ndk;25.2.9519653"
       - name: Check Rust formatting
-        working-directory: module/src/rust
         run: cargo fmt --check
       - name: Run Rust clippy
-        working-directory: module/src/rust
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Run Rust tests
-        working-directory: module/src/rust
-        run: cargo test --locked
+        run: cargo test --workspace --locked
       - name: Get module metadata
         id: module
         run: |
-          version=$(grep "moduleVersion =" module.gradle | awk -F'"' '{print $2}')
-          frida_version=$(grep "fridaVersion =" module.gradle | awk -F'"' '{print $2}')
+          version=v$(cargo metadata --format-version=1 --no-deps | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next(p["version"] for p in data["packages"] if p["name"] == "zygiskfrida"))')
+          frida_version=17.9.6
           tag_name="$version"
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             tag_name="$GITHUB_REF_NAME"
@@ -68,9 +60,7 @@ jobs:
             exit 1
           fi
       - name: Build release zip
-        run: |
-          chmod +x ./gradlew
-          ./gradlew :module:assembleRelease
+        run: cargo xtask package
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

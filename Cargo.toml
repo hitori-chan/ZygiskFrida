@@ -1,0 +1,17 @@
+[workspace]
+members = [
+    "module/src/rust",
+    "xtask",
+]
+resolver = "2"
+
+[workspace.package]
+version = "1.10.2"
+edition = "2024"
+publish = false
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+panic = "abort"
+strip = "symbols"

@@ -58,7 +58,7 @@ In case things are not working as expected, check `adb logcat -s ZygiskFrida` to
 ## Target configuration.
 
 ### app_name
-The bundle id of the application you want to inject frida into.
+The package name of the application you want to inject frida into.
 
 ### enabled
 If set to false, then this module will ignore this configuration.
@@ -112,7 +112,7 @@ or `/proc`, bypass app/security checks, or expand inline hook behavior.
 These are the libraries that will be injected into the process. The libraries
 specified here will be loaded in the order of the array.
 
-The module includes a bundled frida gadget as `libgadget.so` in the Magisk module directory.\
+The module includes a bundled Frida Gadget as `libgadget.so` in the Magisk module directory.\
 Relative library paths are resolved against `/data/adb/modules/zygiskfrida` before app specialization.
 
 For convenience this module also installs a gadget at `libgadget32.so` for injection into application
@@ -163,12 +163,12 @@ The child process will be killed as soon as it is forked. No code will
 run within the child process.
 
 ### inject
-This mode will inject the `injected_libraries` into the child process similiar to the target configuration.
+This mode will inject the `injected_libraries` into the child process similar to the target configuration.
 After injection the child process will resume its normal code flow. You may fail to connect to the gadget
 interactively if the child is only doing a quick check and exits.
 
-Please be aware as the child is forked, it already contains all libraries loaded that the parent processs had.
-But as only a single thread returns from the fork the loaded frida gadget thread is not present in the child process.
+Please be aware as the child is forked, it already contains all libraries loaded that the parent process had.
+But as only a single thread returns from the fork the loaded Frida Gadget thread is not present in the child process.
 
 Reloading the same bundled gadget will fail to start. For this to work you have to load a copy of the gadget.
 You can't load the same file into the process again, a symbolic link won't work either it must be a copy.

@@ -13,11 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
-      - uses: actions/setup-java@99b8673ff64fbf99d8d325f52d9a5bdedb8483e9 # v4.2.1
-        with:
-          distribution: temurin
-          java-version: 21
-          cache: gradle
       - name: Install Rust Android targets
         run: >
           rustup target add
@@ -36,22 +31,17 @@ jobs:
             "build-tools;36.0.0" \
             "ndk;25.2.9519653"
       - name: Check Rust formatting
-        working-directory: module/src/rust
         run: cargo fmt --check
       - name: Run Rust clippy
-        working-directory: module/src/rust
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Run Rust tests
-        working-directory: module/src/rust
-        run: cargo test --locked
+        run: cargo test --workspace --locked
       - name: Test Build
-        run: |
-          chmod +x ./gradlew
-          ./gradlew :module:assembleRelease
+        run: cargo xtask package
       - name: Get Module Version
         id: module-version
         run: |
-          MODULE_VERSION=$(grep "moduleVersion =" module.gradle | awk -F'"' '{print $2}')
+          MODULE_VERSION=v$(cargo metadata --format-version=1 --no-deps | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next(p["version"] for p in data["packages"] if p["name"] == "zygiskfrida"))')
           echo "version=$MODULE_VERSION" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         with:
