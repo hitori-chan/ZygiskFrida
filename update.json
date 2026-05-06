@@ -2,5 +2,5 @@
   "version": "v1.10.2",
   "versionCode": 15,
   "zipUrl": "https://github.com/hitori-chan/ZygiskFrida/releases/download/v1.10.2/ZygiskFrida-v1.10.2-release.zip",
-  "changelog": "https://github.com/hitori-chan/ZygiskFrida/releases/tag/v1.10.2"
+  "changelog": "https://raw.githubusercontent.com/hitori-chan/ZygiskFrida/main/CHANGELOG.md"
 }
